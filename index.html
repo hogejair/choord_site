@@ -9,41 +9,6 @@
     #result { margin-top: 1.5em; font-size: 1.2em; }
     .chord { display: inline-block; margin: 0 0.3em; padding: 0.2em 0.5em; background: #fff; border-radius: 0.3em; border: 1px solid #ccc; }
     label { display: block; margin-top: 1em; }
-    #panicBtn {
-      background: #fff;
-      color: #f44;
-      font-weight: bold;
-      border: 2px solid #f44;
-      border-radius: 50%;
-      width: 2.2em;
-      height: 2.2em;
-      padding: 0;
-      margin-left: 1em;
-      cursor: pointer;
-      position: relative;
-      vertical-align: middle;
-    }
-    #panicBtn .stop-icon {
-      display: block;
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 1.1em;
-      height: 1.1em;
-      background: #f44;
-      border-radius: 50%;
-      transform: translate(-50%, -50%);
-    }
-    #panicBtn .stop-icon-inner {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 0.7em;
-      height: 0.7em;
-      background: #fff;
-      border-radius: 0.15em;
-      transform: translate(-50%, -50%);
-    }
   </style>
 </head>
 <body>
@@ -58,11 +23,11 @@
   </label>
   <label>
     BPM:
-    <input type="number" id="bpm" value="100" min="40" max="300">
+    <input type="number" id="bpm" value="120" min="30" max="300">
   </label>
   <label>
     1コードあたりの拍数:
-    <input type="number" id="beats" value="1" min="1" max="8">
+    <input type="number" id="beats" value="2" min="1" max="8">
   </label>
   <label>
     温度 (0.1=厳密, 1.0=普通, 2.0=独創的):
@@ -70,9 +35,7 @@
   </label>
   <br>
   <button id="generateBtn">生成＆再生</button>
-  <button id="panicBtn" type="button" title="停止">
-    <span class="stop-icon"><span class="stop-icon-inner"></span></span>
-  </button>
+  <button id="panicBtn" type="button" title="停止">停止</button>
   <div id="result"></div>
   <script>
     // N_ORDERは常に1
@@ -295,3 +258,4 @@
     };
   </script>
 </body>
+</html>
