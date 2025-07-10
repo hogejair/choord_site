@@ -186,6 +186,8 @@
       return chordKeys[idx];
     }
 
+    let scheduledTimeout = null; // 追加: 再生スケジューラ管理用
+
     async function playRealtimeProgression(model, startChord, bpm, beats, temperature) {
       if (currentAudioCtx) {
         try { currentAudioCtx.close(); } catch {}
@@ -194,42 +196,56 @@
       progression = [startChord];
       let prevChord = startChord;
       const beatSec = 60 / bpm;
+      let ctx = new (window.AudioContext || window.webkitAudioContext)();
+      currentAudioCtx = ctx;
+      let chordStartTime = ctx.currentTime + 0.1;
 
-      // 最初のコードを表示
       updateResult();
 
-      while (isPlaying) {
+      async function scheduleNext() {
+        if (!isPlaying) {
+          if (currentAudioCtx) {
+            try { currentAudioCtx.close(); } catch {}
+            currentAudioCtx = null;
+          }
+          return;
+        }
         // 再生
         const chord = progression[progression.length - 1];
         const notes = getChordNotes(chord);
         if (notes) {
-          await playChord(notes, bpm, beats);
-        } else {
-          await new Promise(res => setTimeout(res, beatSec * beats * 1000));
+          playChordScheduled(ctx, notes, chordStartTime, beatSec, beats);
         }
-
         // 次のコードを生成
-        if (!isPlaying) break;
         const nextChord = getNextChord(model, prevChord, temperature);
-        if (!nextChord) break;
+        if (!nextChord) {
+          isPlaying = false;
+          if (currentAudioCtx) {
+            try { currentAudioCtx.close(); } catch {}
+            currentAudioCtx = null;
+          }
+          return;
+        }
         progression.push(nextChord);
         if (progression.length > MAX_HISTORY) {
           progression = progression.slice(-MAX_HISTORY);
         }
         prevChord = nextChord;
         updateResult();
+
+        chordStartTime += beatSec * beats;
+        // setTimeoutで次のスケジュール
+        const now = ctx.currentTime;
+        const waitMs = Math.max(0, (chordStartTime - now - 0.02) * 1000); // 余裕を持って
+        scheduledTimeout = setTimeout(scheduleNext, waitMs);
       }
-      if (currentAudioCtx) {
-        try { currentAudioCtx.close(); } catch {}
-        currentAudioCtx = null;
-      }
+
+      scheduleNext();
     }
 
-    async function playChord(notes, bpm, beats) {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      currentAudioCtx = ctx;
-      const beatSec = 60 / bpm;
-      let now = ctx.currentTime + 0.05;
+    function playChordScheduled(ctx, notes, startTime, beatSec, beats) {
+      // 各ノートのoscillator/gainを管理して停止できるようにする
+      if (!ctx._oscList) ctx._oscList = [];
       for (const midi of notes) {
         const freq = 440 * Math.pow(2, (midi - 69) / 12);
         const osc = ctx.createOscillator();
@@ -238,15 +254,11 @@
         osc.frequency.value = freq;
         gain.gain.value = 0.12;
         osc.connect(gain).connect(ctx.destination);
-        osc.start(now);
-        osc.stop(now + beatSec * beats * 0.95);
-        gain.gain.setValueAtTime(0.12, now);
-        gain.gain.linearRampToValueAtTime(0.0, now + beatSec * beats * 0.95);
-      }
-      await new Promise(res => setTimeout(res, beatSec * beats * 1000));
-      if (ctx === currentAudioCtx) {
-        ctx.close();
-        currentAudioCtx = null;
+        osc.start(startTime);
+        osc.stop(startTime + beatSec * beats * 0.95);
+        gain.gain.setValueAtTime(0.12, startTime);
+        gain.gain.linearRampToValueAtTime(0.0, startTime + beatSec * beats * 0.95);
+        ctx._oscList.push(osc);
       }
     }
 
@@ -327,15 +339,24 @@
       const beats = parseInt(beatsStr);
       const temperature = parseFloat(temperatureStr);
 
-      isPlaying = false; // 既存再生停止
-      await new Promise(res => setTimeout(res, 100)); // 少し待つ
+      isPlaying = false;
+      if (scheduledTimeout) clearTimeout(scheduledTimeout);
+      await new Promise(res => setTimeout(res, 100));
       isPlaying = true;
       playRealtimeProgression(model, startChord, bpm, beats, temperature);
     };
 
     document.getElementById('panicBtn').onclick = function() {
       isPlaying = false;
+      if (scheduledTimeout) clearTimeout(scheduledTimeout);
       if (currentAudioCtx) {
+        // すべてのoscillatorを即時停止
+        if (currentAudioCtx._oscList) {
+          for (const osc of currentAudioCtx._oscList) {
+            try { osc.stop(); } catch {}
+          }
+          currentAudioCtx._oscList = [];
+        }
         try { currentAudioCtx.close(); } catch {}
         currentAudioCtx = null;
       }
