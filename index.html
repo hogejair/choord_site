@@ -75,6 +75,8 @@
   </button>
   <div id="result"></div>
   <script>
+    // N_ORDERは常に1
+    const N_ORDER = 1;
     let model = null;
     let currentAudioCtx = null; // パニック用
 
@@ -184,17 +186,24 @@
       return chords[chords.length - 1];
     }
 
+    function generateInitialContext(model, startCode) {
+      // 1次元なのでcontextは1つだけ
+      return [startCode];
+    }
+
     function generateProgression(model, seedSequence, length, temperature) {
       const progression = [...seedSequence];
-      for (let i = 0; i < length - 1; i++) {
+      for (let i = 0; i < length - N_ORDER; i++) {
         let found = false;
-        const key = progression.slice(-1).join('-');
-        const probs = model[key];
-        if (probs) {
-          const nextChord = sampleWithTemperature(probs, temperature);
-          progression.push(nextChord);
-          found = true;
-          break;
+        for (let order = N_ORDER; order > 0; order--) {
+          const key = progression.slice(-order).join('-');
+          const probs = model[key];
+          if (probs) {
+            const nextChord = sampleWithTemperature(probs, temperature);
+            progression.push(nextChord);
+            found = true;
+            break;
+          }
         }
         if (!found) break;
       }
@@ -210,7 +219,7 @@
       const beatSec = 60 / bpm;
       let now = ctx.currentTime + 0.1;
       for (const chord of chordNames) {
-        if (ctx !== currentAudioCtx) break;
+        if (ctx !== currentAudioCtx) break; // パニック時に即停止
         const notes = getChordNotes(chord);
         if (!notes) continue;
         for (const midi of notes) {
@@ -247,13 +256,18 @@
         document.getElementById('result').textContent = 'モデルがまだ読み込まれていません。';
         return;
       }
+      // N_ORDER選択は不要
       const startChord = document.getElementById('startChord').value.trim();
       const length = parseInt(document.getElementById('length').value);
       const bpm = parseInt(document.getElementById('bpm').value);
       const beats = parseInt(document.getElementById('beats').value);
       const temperature = parseFloat(document.getElementById('temperature').value);
 
-      const seedContext = startChord;
+      const seedContext = generateInitialContext(model, startChord);
+      if (!seedContext) {
+        document.getElementById('result').textContent = `開始コード '${startChord}' に基づく初期文脈の補完に失敗しました。`;
+        return;
+      }
       const result = generateProgression(model, seedContext, length, temperature);
 
       document.getElementById('result').innerHTML =
