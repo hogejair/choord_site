@@ -227,16 +227,16 @@
       const temperatureStr = document.getElementById('temperature').value;
 
       let warning = '';
-      if (!lengthStr || isNaN(lengthStr) || parseInt(lengthStr) < 2) {
+      if (!lengthStr || isNaN(lengthStr)) {
         warning += '生成するコード数を2以上で入力してください。\n';
       }
-      if (!bpmStr || isNaN(bpmStr) || parseInt(bpmStr) < 30) {
+      if (!bpmStr || isNaN(bpmStr)) {
         warning += 'BPMを30以上で入力してください。\n';
       }
-      if (!beatsStr || isNaN(beatsStr) || parseInt(beatsStr) < 1) {
+      if (!beatsStr || isNaN(beatsStr)) {
         warning += '1コードあたりの拍数を1以上で入力してください。\n';
       }
-      if (!temperatureStr || isNaN(temperatureStr) || parseFloat(temperatureStr) < 0.1) {
+      if (!temperatureStr || isNaN(temperatureStr)) {
         warning += '温度を0.1以上で入力してください。\n';
       }
       
