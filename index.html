@@ -18,10 +18,6 @@
     <input type="text" id="startChord" value="Cmaj7" size="12">
   </label>
   <label>
-    生成するコード数:
-    <input type="number" id="length" value="8" step="1" min="2" max="32">
-  </label>  
-  <label>
     BPM:
     <input type="number" id="bpm" value="120" min="30" max="300">
   </label>
@@ -41,6 +37,9 @@
   <script>
     let model = null;
     let currentAudioCtx = null;
+    let isPlaying = false;
+    let progression = [];
+    const MAX_HISTORY = 8; // 表示する履歴数
 
     const CHORD_DEGREES = {
       "":         [0, 4, 7],
@@ -148,54 +147,106 @@
       return chords[chords.length - 1];
     }
 
-    function generateProgression(model, seedSequence, length, temperature) {
-      const progression = [...seedSequence];
-      for (let i = 0; i < length - 1; i++) {
-        let found = false;
-        const key = progression.slice(-1).join('-');
-        const probs = model[key];
-        if (probs) {
-          const nextChord = sampleWithTemperature(probs, temperature);
-          progression.push(nextChord);
-          found = true;
-        }
-        if (!found) break;
+    function getNextChord(model, prevChord, temperature) {
+      const key = prevChord;
+      const probs = model[key];
+      if (probs) {
+        return sampleWithTemperature(probs, temperature);
       }
-      return progression;
+      // fallback: ランダムに1つ
+      const keys = Object.keys(model);
+      const chordKeys = keys.filter(k => !k.includes('-'));
+      if (chordKeys.length === 0) return null;
+      const idx = Math.floor(Math.random() * chordKeys.length);
+      return chordKeys[idx];
     }
 
-    async function playChordProgression(chordNames, bpm, beats) {
+    async function playRealtimeProgression(model, startChord, bpm, beats, temperature) {
       if (currentAudioCtx) {
         try { currentAudioCtx.close(); } catch {}
       }
+      isPlaying = true;
+      progression = [startChord];
+      let prevChord = startChord;
+      const beatSec = 60 / bpm;
+
+      // 最初のコードを表示
+      updateResult();
+
+      while (isPlaying) {
+        // 再生
+        const chord = progression[progression.length - 1];
+        const notes = getChordNotes(chord);
+        if (notes) {
+          await playChord(notes, bpm, beats);
+        } else {
+          await new Promise(res => setTimeout(res, beatSec * beats * 1000));
+        }
+
+        // 次のコードを生成
+        if (!isPlaying) break;
+        const nextChord = getNextChord(model, prevChord, temperature);
+        if (!nextChord) break;
+        progression.push(nextChord);
+        if (progression.length > MAX_HISTORY) {
+          progression = progression.slice(-MAX_HISTORY);
+        }
+        prevChord = nextChord;
+        updateResult();
+      }
+      if (currentAudioCtx) {
+        try { currentAudioCtx.close(); } catch {}
+        currentAudioCtx = null;
+      }
+    }
+
+    async function playChord(notes, bpm, beats) {
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       currentAudioCtx = ctx;
       const beatSec = 60 / bpm;
-      let now = ctx.currentTime + 0.1;
-      for (const chord of chordNames) {
-        if (ctx !== currentAudioCtx) break;
-        const notes = getChordNotes(chord);
-        if (!notes) continue;
-        for (const midi of notes) {
-          const freq = 440 * Math.pow(2, (midi - 69) / 12);
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'triangle';
-          osc.frequency.value = freq;
-          gain.gain.value = 0.12;
-          osc.connect(gain).connect(ctx.destination);
-          osc.start(now);
-          osc.stop(now + beatSec * beats * 0.95);
-          gain.gain.setValueAtTime(0.12, now);
-          gain.gain.linearRampToValueAtTime(0.0, now + beatSec * beats * 0.95);
-        }
-        now += beatSec * beats;
+      let now = ctx.currentTime + 0.05;
+      for (const midi of notes) {
+        const freq = 440 * Math.pow(2, (midi - 69) / 12);
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.value = freq;
+        gain.gain.value = 0.12;
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now);
+        osc.stop(now + beatSec * beats * 0.95);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.linearRampToValueAtTime(0.0, now + beatSec * beats * 0.95);
       }
-      await new Promise(res => setTimeout(res, beatSec * beats * chordNames.length * 1000 + 200));
+      await new Promise(res => setTimeout(res, beatSec * beats * 1000));
       if (ctx === currentAudioCtx) {
         ctx.close();
         currentAudioCtx = null;
       }
+    }
+
+    function updateResult() {
+      // progressionの最後のコードの構成音のみ表示
+      const lastChord = progression[progression.length - 1];
+      const notes = getChordNotes(lastChord);
+      let noteStr = '';
+      if (notes) {
+        const noteNames = notes.map(n => `${NOTE_NAMES[n % 12]}${Math.floor(n / 12) - 1}`);
+        noteStr = `<span class="chord">${lastChord}</span>: [${noteNames.join(', ')}]`;
+      } else {
+        noteStr = `<span class="chord">${lastChord}</span>: (対応表未定義)`;
+      }
+      document.getElementById('result').innerHTML =
+        '<b>コード進行:</b><br>' +
+        progression.map((c, i) => {
+          if (i === progression.length - 1) {
+            return `<span class="chord" style="background:#ffe;">${c}</span>`;
+          } else {
+            return `<span class="chord">${c}</span>`;
+          }
+        }).join(' — ') +
+        '<br><br><b>現在のコードの構成音:</b><br>' +
+        noteStr;
     }
 
     fetch('model.json')
@@ -219,17 +270,13 @@
         document.getElementById('result').textContent = 'モデルがまだ読み込まれていません。';
         return;
       }
-      
+
       let startChord = document.getElementById('startChord').value.trim();
-      const lengthStr = document.getElementById('length').value;
       const bpmStr = document.getElementById('bpm').value;
       const beatsStr = document.getElementById('beats').value;
       const temperatureStr = document.getElementById('temperature').value;
 
       let warning = '';
-      if (!lengthStr || isNaN(lengthStr)) {
-        warning += '生成するコード数を2以上で入力してください。\n';
-      }
       if (!bpmStr || isNaN(bpmStr)) {
         warning += 'BPMを30以上で入力してください。\n';
       }
@@ -239,7 +286,7 @@
       if (!temperatureStr || isNaN(temperatureStr)) {
         warning += '温度を0.1以上で入力してください。\n';
       }
-      
+
       if (!startChord) {
         startChord = getRandomChordFromModel(model);
         if (!startChord) {
@@ -251,36 +298,18 @@
         return;
       }
 
-      const length = parseInt(lengthStr);
       const bpm = parseInt(bpmStr);
       const beats = parseInt(beatsStr);
       const temperature = parseFloat(temperatureStr);
 
-      const seedContext = [startChord];
-      if (!seedContext) {
-        document.getElementById('result').textContent = `開始コード '${startChord}' に基づく初期文脈の補完に失敗しました。`;
-        return;
-      }
-      const result = generateProgression(model, seedContext, length, temperature);
-
-      document.getElementById('result').innerHTML =
-        '<b>生成されたコード進行:</b><br>' +
-        result.map(c => `<span class="chord">${c}</span>`).join(' — ') +
-        '<br><br><b>各コードの構成音:</b><br>' +
-        result.map(chord => {
-          const notes = getChordNotes(chord);
-          if (notes) {
-            const noteNames = notes.map(n => `${NOTE_NAMES[n % 12]}${Math.floor(n / 12) - 1}`);
-            return `<span class="chord">${chord}</span>: [${noteNames.join(', ')}]`;
-          } else {
-            return `<span class="chord">${chord}</span>: (対応表未定義)`;
-          }
-        }).join('<br>');
-
-      await playChordProgression(result, bpm, beats);
+      isPlaying = false; // 既存再生停止
+      await new Promise(res => setTimeout(res, 100)); // 少し待つ
+      isPlaying = true;
+      playRealtimeProgression(model, startChord, bpm, beats, temperature);
     };
 
     document.getElementById('panicBtn').onclick = function() {
+      isPlaying = false;
       if (currentAudioCtx) {
         try { currentAudioCtx.close(); } catch {}
         currentAudioCtx = null;
