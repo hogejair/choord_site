@@ -37,9 +37,8 @@
   <button id="generateBtn">生成＆再生</button>
   <button id="panicBtn" type="button" title="停止">停止</button>
   <div id="result"></div>
+  <div id="warning" style="margin-top:1em;"></div>
   <script>
-    // N_ORDERは常に1
-    const N_ORDER = 1;
     let model = null;
     let currentAudioCtx = null; // パニック用
 
@@ -149,16 +148,11 @@
       return chords[chords.length - 1];
     }
 
-    function generateInitialContext(model, startCode) {
-      // 1次元なのでcontextは1つだけ
-      return [startCode];
-    }
-
     function generateProgression(model, seedSequence, length, temperature) {
       const progression = [...seedSequence];
-      for (let i = 0; i < length - N_ORDER; i++) {
+      for (let i = 0; i < length - 1; i++) {
         let found = false;
-        for (let order = N_ORDER; order > 0; order--) {
+        for (let order = 1; order > 0; order--) {
           const key = progression.slice(-order).join('-');
           const probs = model[key];
           if (probs) {
@@ -214,19 +208,60 @@
         document.getElementById('result').textContent = 'モデルファイルの読み込みに失敗しました。';
       });
 
+    function getRandomChordFromModel(model) {
+      const keys = Object.keys(model);
+      // 1次元マルコフなので、単一コード名のみのkeyを抽出
+      const chordKeys = keys.filter(k => !k.includes('-'));
+      if (chordKeys.length === 0) return null;
+      const idx = Math.floor(Math.random() * chordKeys.length);
+      return chordKeys[idx];
+    }
+
     document.getElementById('generateBtn').onclick = async function() {
+      document.getElementById('warning').textContent = '';
       if (!model) {
         document.getElementById('result').textContent = 'モデルがまだ読み込まれていません。';
         return;
       }
-      // N_ORDER選択は不要
-      const startChord = document.getElementById('startChord').value.trim();
-      const length = parseInt(document.getElementById('length').value);
-      const bpm = parseInt(document.getElementById('bpm').value);
-      const beats = parseInt(document.getElementById('beats').value);
-      const temperature = parseFloat(document.getElementById('temperature').value);
+      // 入力値取得
+      let startChord = document.getElementById('startChord').value.trim();
+      const lengthStr = document.getElementById('length').value;
+      const bpmStr = document.getElementById('bpm').value;
+      const beatsStr = document.getElementById('beats').value;
+      const temperatureStr = document.getElementById('temperature').value;
 
-      const seedContext = generateInitialContext(model, startChord);
+      // 入力チェック
+      let warning = '';
+      if (!lengthStr || isNaN(lengthStr) || parseInt(lengthStr) < 2) {
+        warning += '生成するコード数を2以上で入力してください。\n';
+      }
+      if (!bpmStr || isNaN(bpmStr) || parseInt(bpmStr) < 30) {
+        warning += 'BPMを30以上で入力してください。\n';
+      }
+      if (!beatsStr || isNaN(beatsStr) || parseInt(beatsStr) < 1) {
+        warning += '1コードあたりの拍数を1以上で入力してください。\n';
+      }
+      if (!temperatureStr || isNaN(temperatureStr) || parseFloat(temperatureStr) < 0.1) {
+        warning += '温度を0.1以上で入力してください。\n';
+      }
+      // 最初のコードが空の場合はランダム選択
+      if (!startChord) {
+        startChord = getRandomChordFromModel(model);
+        if (!startChord) {
+          warning += 'モデルにコードが含まれていません。\n';
+        }
+      }
+      if (warning) {
+        document.getElementById('warning').textContent = warning.trim();
+        return;
+      }
+
+      const length = parseInt(lengthStr);
+      const bpm = parseInt(bpmStr);
+      const beats = parseInt(beatsStr);
+      const temperature = parseFloat(temperatureStr);
+
+      const seedContext = [startChord];
       if (!seedContext) {
         document.getElementById('result').textContent = `開始コード '${startChord}' に基づく初期文脈の補完に失敗しました。`;
         return;
