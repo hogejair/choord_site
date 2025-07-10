@@ -200,7 +200,7 @@
       currentAudioCtx = ctx;
       let chordStartTime = ctx.currentTime + 0.1;
 
-      updateResult();
+      updateResult(); // 最初のコードのみ表示
 
       async function scheduleNext() {
         if (!isPlaying) {
@@ -210,12 +210,15 @@
           }
           return;
         }
-        // 再生
+        // progressionの最後のコードを再生
         const chord = progression[progression.length - 1];
         const notes = getChordNotes(chord);
         if (notes) {
           playChordScheduled(ctx, notes, chordStartTime, beatSec, beats);
         }
+        // updateResultはここで呼ぶ（再生するコードがリストの最後になるように）
+        updateResult();
+
         // 次のコードを生成
         const nextChord = getNextChord(model, prevChord, temperature);
         if (!nextChord) {
@@ -226,18 +229,20 @@
           }
           return;
         }
-        progression.push(nextChord);
-        if (progression.length > MAX_HISTORY) {
-          progression = progression.slice(-MAX_HISTORY);
-        }
         prevChord = nextChord;
-        updateResult();
 
+        // progressionへの追加は次のスケジュール直前に行う
         chordStartTime += beatSec * beats;
-        // setTimeoutで次のスケジュール
         const now = ctx.currentTime;
-        const waitMs = Math.max(0, (chordStartTime - now - 0.02) * 1000); // 余裕を持って
-        scheduledTimeout = setTimeout(scheduleNext, waitMs);
+        const waitMs = Math.max(0, (chordStartTime - now - 0.02) * 1000);
+        scheduledTimeout = setTimeout(() => {
+          // progressionへの追加はここ
+          progression.push(nextChord);
+          if (progression.length > MAX_HISTORY) {
+            progression = progression.slice(-MAX_HISTORY);
+          }
+          scheduleNext();
+        }, waitMs);
       }
 
       scheduleNext();
@@ -246,6 +251,7 @@
     function playChordScheduled(ctx, notes, startTime, beatSec, beats) {
       // 各ノートのoscillator/gainを管理して停止できるようにする
       if (!ctx._oscList) ctx._oscList = [];
+      if (!ctx._gainList) ctx._gainList = [];
       for (const midi of notes) {
         const freq = 440 * Math.pow(2, (midi - 69) / 12);
         const osc = ctx.createOscillator();
@@ -259,6 +265,7 @@
         gain.gain.setValueAtTime(0.12, startTime);
         gain.gain.linearRampToValueAtTime(0.0, startTime + beatSec * beats * 0.95);
         ctx._oscList.push(osc);
+        ctx._gainList.push(gain);
       }
     }
 
@@ -350,15 +357,28 @@
       isPlaying = false;
       if (scheduledTimeout) clearTimeout(scheduledTimeout);
       if (currentAudioCtx) {
-        // すべてのoscillatorを即時停止
+        // すべてのoscillatorを素早くフェードアウト
+        if (currentAudioCtx._gainList) {
+          const now = currentAudioCtx.currentTime;
+          for (const gain of currentAudioCtx._gainList) {
+            try {
+              gain.gain.cancelScheduledValues(now);
+              gain.gain.setValueAtTime(gain.gain.value, now);
+              gain.gain.linearRampToValueAtTime(0.0, now + 0.08);
+            } catch {}
+          }
+          currentAudioCtx._gainList = [];
+        }
         if (currentAudioCtx._oscList) {
           for (const osc of currentAudioCtx._oscList) {
-            try { osc.stop(); } catch {}
+            try { osc.stop(currentAudioCtx.currentTime + 0.09); } catch {}
           }
           currentAudioCtx._oscList = [];
         }
-        try { currentAudioCtx.close(); } catch {}
-        currentAudioCtx = null;
+        setTimeout(() => {
+          try { currentAudioCtx.close(); } catch {}
+          currentAudioCtx = null;
+        }, 120);
       }
     };
   </script>
