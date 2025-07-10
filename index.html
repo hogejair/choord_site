@@ -10,14 +10,39 @@
     .chord { display: inline-block; margin: 0 0.3em; padding: 0.2em 0.5em; background: #fff; border-radius: 0.3em; border: 1px solid #ccc; }
     label { display: block; margin-top: 1em; }
     #panicBtn {
-      background: #f44;
-      color: #fff;
+      background: #fff;
+      color: #f44;
       font-weight: bold;
-      border: none;
-      border-radius: 0.3em;
-      padding: 0.4em 1em;
+      border: 2px solid #f44;
+      border-radius: 50%;
+      width: 2.2em;
+      height: 2.2em;
+      padding: 0;
       margin-left: 1em;
       cursor: pointer;
+      position: relative;
+      vertical-align: middle;
+    }
+    #panicBtn .stop-icon {
+      display: block;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 1.1em;
+      height: 1.1em;
+      background: #f44;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+    }
+    #panicBtn .stop-icon-inner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0.7em;
+      height: 0.7em;
+      background: #fff;
+      border-radius: 0.15em;
+      transform: translate(-50%, -50%);
     }
   </style>
 </head>
@@ -43,19 +68,13 @@
     温度 (0.1=厳密, 1.0=普通, 2.0=独創的):
     <input type="number" id="temperature" value="1.0" step="0.1" min="0.1" max="3.0">
   </label>
-  <label>
-    マルコフ次元:
-    <select id="order">
-      <option value="1">1</option>
-      <option value="2" selected>2</option>
-    </select>
-  </label>
   <br>
   <button id="generateBtn">生成＆再生</button>
-  <button id="panicBtn" type="button">パニック</button>
+  <button id="panicBtn" type="button" title="停止">
+    <span class="stop-icon"><span class="stop-icon-inner"></span></span>
+  </button>
   <div id="result"></div>
   <script>
-    let N_ORDER = 2;
     let model = null;
     let currentAudioCtx = null; // パニック用
 
@@ -165,39 +184,17 @@
       return chords[chords.length - 1];
     }
 
-    function generateInitialContext(model, startCode) {
-      let context = [startCode];
-      for (let i = 0; i < N_ORDER - 1; i++) {
-        let found = false;
-        for (let order = N_ORDER - i; order > 0; order--) {
-          const prev_context = order > 1 ? context.slice(-order + 1) : [context[context.length - 1]];
-          const key = prev_context.join('-');
-          const probs = model[key];
-          if (probs) {
-            const nextChord = sampleWithTemperature(probs, 1.0);
-            context.push(nextChord);
-            found = true;
-            break;
-          }
-        }
-        if (!found) break;
-      }
-      return context.length === N_ORDER ? context : null;
-    }
-
     function generateProgression(model, seedSequence, length, temperature) {
       const progression = [...seedSequence];
-      for (let i = 0; i < length - N_ORDER; i++) {
+      for (let i = 0; i < length - 1; i++) {
         let found = false;
-        for (let order = N_ORDER; order > 0; order--) {
-          const key = progression.slice(-order).join('-');
-          const probs = model[key];
-          if (probs) {
-            const nextChord = sampleWithTemperature(probs, temperature);
-            progression.push(nextChord);
-            found = true;
-            break;
-          }
+        const key = progression.slice(-1).join('-');
+        const probs = model[key];
+        if (probs) {
+          const nextChord = sampleWithTemperature(probs, temperature);
+          progression.push(nextChord);
+          found = true;
+          break;
         }
         if (!found) break;
       }
@@ -213,7 +210,7 @@
       const beatSec = 60 / bpm;
       let now = ctx.currentTime + 0.1;
       for (const chord of chordNames) {
-        if (ctx !== currentAudioCtx) break; // パニック時に即停止
+        if (ctx !== currentAudioCtx) break;
         const notes = getChordNotes(chord);
         if (!notes) continue;
         for (const midi of notes) {
@@ -250,18 +247,13 @@
         document.getElementById('result').textContent = 'モデルがまだ読み込まれていません。';
         return;
       }
-      N_ORDER = parseInt(document.getElementById('order').value, 10);
       const startChord = document.getElementById('startChord').value.trim();
       const length = parseInt(document.getElementById('length').value);
       const bpm = parseInt(document.getElementById('bpm').value);
       const beats = parseInt(document.getElementById('beats').value);
       const temperature = parseFloat(document.getElementById('temperature').value);
 
-      const seedContext = generateInitialContext(model, startChord);
-      if (!seedContext) {
-        document.getElementById('result').textContent = `開始コード '${startChord}' に基づく初期文脈の補完に失敗しました。`;
-        return;
-      }
+      const seedContext = startChord;
       const result = generateProgression(model, seedContext, length, temperature);
 
       document.getElementById('result').innerHTML =
@@ -289,4 +281,3 @@
     };
   </script>
 </body>
-</html>
