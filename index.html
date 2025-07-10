@@ -148,14 +148,39 @@
     }
 
     function getNextChord(model, prevChord, temperature) {
+      // progressionの末尾2つが同じ場合、その和音を除外
+      let excludeChord = null;
+      if (progression.length >= 2) {
+        const last = progression[progression.length - 1];
+        const prev = progression[progression.length - 2];
+        if (last === prev) {
+          excludeChord = last;
+        }
+      }
       const key = prevChord;
-      const probs = model[key];
+      let probs = model[key];
       if (probs) {
+        // 除外対象があれば除外
+        if (excludeChord) {
+          probs = Object.fromEntries(
+            Object.entries(probs).filter(([chord]) => chord !== excludeChord)
+          );
+          // すべて除外されて空になった場合は元に戻す
+          if (Object.keys(probs).length === 0) {
+            probs = model[key];
+          }
+        }
         return sampleWithTemperature(probs, temperature);
       }
       // fallback: ランダムに1つ
       const keys = Object.keys(model);
-      const chordKeys = keys.filter(k => !k.includes('-'));
+      let chordKeys = keys.filter(k => !k.includes('-'));
+      if (excludeChord) {
+        chordKeys = chordKeys.filter(k => k !== excludeChord);
+        if (chordKeys.length === 0) {
+          chordKeys = keys.filter(k => !k.includes('-'));
+        }
+      }
       if (chordKeys.length === 0) return null;
       const idx = Math.floor(Math.random() * chordKeys.length);
       return chordKeys[idx];
