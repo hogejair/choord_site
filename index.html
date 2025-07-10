@@ -39,7 +39,7 @@
     let currentAudioCtx = null;
     let isPlaying = false;
     let progression = [];
-    const MAX_HISTORY = 8; // 表示する履歴数
+    const MAX_HISTORY = 8;
 
     const CHORD_DEGREES = {
       "":         [0, 4, 7],
@@ -148,7 +148,6 @@
     }
 
     function getNextChord(model, prevChord, temperature) {
-      // progressionの末尾2つが同じ場合、その和音を除外
       let excludeChord = null;
       if (progression.length >= 2) {
         const last = progression[progression.length - 1];
@@ -160,19 +159,16 @@
       const key = prevChord;
       let probs = model[key];
       if (probs) {
-        // 除外対象があれば除外
         if (excludeChord) {
           probs = Object.fromEntries(
             Object.entries(probs).filter(([chord]) => chord !== excludeChord)
           );
-          // すべて除外されて空になった場合は元に戻す
           if (Object.keys(probs).length === 0) {
             probs = model[key];
           }
         }
         return sampleWithTemperature(probs, temperature);
       }
-      // fallback: ランダムに1つ
       const keys = Object.keys(model);
       let chordKeys = keys.filter(k => !k.includes('-'));
       if (excludeChord) {
@@ -186,7 +182,7 @@
       return chordKeys[idx];
     }
 
-    let scheduledTimeout = null; // 追加: 再生スケジューラ管理用
+    let scheduledTimeout = null;
 
     async function playRealtimeProgression(model, startChord, bpm, beats, temperature) {
       if (currentAudioCtx) {
@@ -200,7 +196,7 @@
       currentAudioCtx = ctx;
       let chordStartTime = ctx.currentTime + 0.1;
 
-      updateResult(); // 最初のコードのみ表示
+      updateResult();
 
       async function scheduleNext() {
         if (!isPlaying) {
@@ -210,16 +206,13 @@
           }
           return;
         }
-        // progressionの最後のコードを再生
         const chord = progression[progression.length - 1];
         const notes = getChordNotes(chord);
         if (notes) {
           playChordScheduled(ctx, notes, chordStartTime, beatSec, beats);
         }
-        // updateResultはここで呼ぶ（再生するコードがリストの最後になるように）
         updateResult();
 
-        // 次のコードを生成
         const nextChord = getNextChord(model, prevChord, temperature);
         if (!nextChord) {
           isPlaying = false;
@@ -231,12 +224,10 @@
         }
         prevChord = nextChord;
 
-        // progressionへの追加は次のスケジュール直前に行う
         chordStartTime += beatSec * beats;
         const now = ctx.currentTime;
         const waitMs = Math.max(0, (chordStartTime - now - 0.02) * 1000);
         scheduledTimeout = setTimeout(() => {
-          // progressionへの追加はここ
           progression.push(nextChord);
           if (progression.length > MAX_HISTORY) {
             progression = progression.slice(-MAX_HISTORY);
@@ -249,7 +240,6 @@
     }
 
     function playChordScheduled(ctx, notes, startTime, beatSec, beats) {
-      // 各ノートのoscillator/gainを管理して停止できるようにする
       if (!ctx._oscList) ctx._oscList = [];
       if (!ctx._gainList) ctx._gainList = [];
       for (const midi of notes) {
@@ -270,7 +260,6 @@
     }
 
     function updateResult() {
-      // progressionの最後のコードの構成音のみ表示
       const lastChord = progression[progression.length - 1];
       const notes = getChordNotes(lastChord);
       let noteStr = '';
@@ -357,7 +346,6 @@
       isPlaying = false;
       if (scheduledTimeout) clearTimeout(scheduledTimeout);
       if (currentAudioCtx) {
-        // すべてのoscillatorを素早くフェードアウト
         if (currentAudioCtx._gainList) {
           const now = currentAudioCtx.currentTime;
           for (const gain of currentAudioCtx._gainList) {
