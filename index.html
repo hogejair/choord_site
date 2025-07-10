@@ -15,32 +15,32 @@
   <h1>コード進行ジェネレーター</h1>
   <label>
     最初のコード:
-    <input type="text" id="startChord" value="Cmaj7" size="8">
+    <input type="text" id="startChord" value="Cmaj7" size="12">
   </label>
   <label>
     生成するコード数:
-    <input type="number" id="length" value="8" min="2" max="32">
-  </label>
+    <input type="number" id="length" value="8" step="1" min="2" max="32">
+  </label>  
   <label>
     BPM:
     <input type="number" id="bpm" value="120" min="30" max="300">
   </label>
   <label>
     1コードあたりの拍数:
-    <input type="number" id="beats" value="2" min="1" max="8">
+    <input type="number" id="beats" value="2" step="1" min="1" max="4">
   </label>
   <label>
     温度 (0.1=厳密, 1.0=普通, 2.0=独創的):
-    <input type="number" id="temperature" value="1.0" step="0.1" min="0.1" max="3.0">
+    <input type="number" id="temperature" value="1.0" step="0.1" min="0" max="100">
   </label>
   <br>
   <button id="generateBtn">生成＆再生</button>
   <button id="panicBtn" type="button" title="停止">停止</button>
-  <div id="result"></div>
   <div id="warning" style="margin-top:1em;"></div>
+  <div id="result"></div>
   <script>
     let model = null;
-    let currentAudioCtx = null; // パニック用
+    let currentAudioCtx = null;
 
     const CHORD_DEGREES = {
       "":         [0, 4, 7],
@@ -173,7 +173,7 @@
       const beatSec = 60 / bpm;
       let now = ctx.currentTime + 0.1;
       for (const chord of chordNames) {
-        if (ctx !== currentAudioCtx) break; // パニック時に即停止
+        if (ctx !== currentAudioCtx) break;
         const notes = getChordNotes(chord);
         if (!notes) continue;
         for (const midi of notes) {
@@ -207,7 +207,6 @@
 
     function getRandomChordFromModel(model) {
       const keys = Object.keys(model);
-      // 1次元マルコフなので、単一コード名のみのkeyを抽出
       const chordKeys = keys.filter(k => !k.includes('-'));
       if (chordKeys.length === 0) return null;
       const idx = Math.floor(Math.random() * chordKeys.length);
@@ -220,14 +219,13 @@
         document.getElementById('result').textContent = 'モデルがまだ読み込まれていません。';
         return;
       }
-      // 入力値取得
+      
       let startChord = document.getElementById('startChord').value.trim();
       const lengthStr = document.getElementById('length').value;
       const bpmStr = document.getElementById('bpm').value;
       const beatsStr = document.getElementById('beats').value;
       const temperatureStr = document.getElementById('temperature').value;
 
-      // 入力チェック
       let warning = '';
       if (!lengthStr || isNaN(lengthStr) || parseInt(lengthStr) < 2) {
         warning += '生成するコード数を2以上で入力してください。\n';
@@ -241,7 +239,7 @@
       if (!temperatureStr || isNaN(temperatureStr) || parseFloat(temperatureStr) < 0.1) {
         warning += '温度を0.1以上で入力してください。\n';
       }
-      // 最初のコードが空の場合はランダム選択
+      
       if (!startChord) {
         startChord = getRandomChordFromModel(model);
         if (!startChord) {
